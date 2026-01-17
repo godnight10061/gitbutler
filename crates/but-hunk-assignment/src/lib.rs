@@ -843,6 +843,172 @@ mod tests {
     }
 
     #[test]
+    fn intersects_selector_hunks_different_sides_do_not_intersect() {
+        let base_hunk = HunkAssignment {
+            id: Some(id_seq(0)),
+            hunk_header: Some(HunkHeader {
+                old_start: 1,
+                old_lines: 10,
+                new_start: 1,
+                new_lines: 10,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: None,
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+        let selects_new = HunkAssignment {
+            id: Some(id_seq(1)),
+            hunk_header: Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 5,
+                new_lines: 1,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: None,
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+        let selects_old = HunkAssignment {
+            id: Some(id_seq(2)),
+            hunk_header: Some(HunkHeader {
+                old_start: 5,
+                old_lines: 1,
+                new_start: 0,
+                new_lines: 0,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: None,
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+
+        assert!(selects_new.clone().intersects(base_hunk.clone()));
+        assert!(selects_old.clone().intersects(base_hunk.clone()));
+        assert!(!selects_new.clone().intersects(selects_old.clone()));
+        assert!(!selects_old.intersects(selects_new.clone()));
+
+        let selects_new_other_line = HunkAssignment {
+            id: Some(id_seq(3)),
+            hunk_header: Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 6,
+                new_lines: 1,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: None,
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+        assert!(!selects_new.intersects(selects_new_other_line));
+    }
+
+    #[test]
+    fn reconcile_splits_base_hunk_into_per_line_selectors_when_old_has_selectors() {
+        let applied_stacks = vec![stack_id_seq(1), stack_id_seq(2)];
+
+        let base = HunkAssignment {
+            id: Some(id_seq(0)),
+            hunk_header: Some(HunkHeader {
+                old_start: 3,
+                old_lines: 0,
+                new_start: 4,
+                new_lines: 2,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: None,
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: Some(BString::from("@@ -3,0 +4,2 @@\n+line-b\n+line-a\n")),
+        };
+
+        let line_b = HunkAssignment {
+            id: Some(id_seq(2)),
+            hunk_header: Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 4,
+                new_lines: 1,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: Some(stack_id_seq(2)),
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+        let line_a = HunkAssignment {
+            id: Some(id_seq(1)),
+            hunk_header: Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 5,
+                new_lines: 1,
+            }),
+            path: "file.txt".to_string(),
+            path_bytes: BString::from("file.txt"),
+            stack_id: Some(stack_id_seq(1)),
+            hunk_locks: None,
+            line_nums_added: None,
+            line_nums_removed: None,
+            diff: None,
+        };
+
+        let result = reconcile::assignments(
+            &[base],
+            &[line_b, line_a],
+            &applied_stacks,
+            MultipleOverlapping::SetMostLines,
+            true,
+        );
+
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(
+            result[0].hunk_header,
+            Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 4,
+                new_lines: 1
+            })
+        );
+        assert_eq!(result[0].stack_id, Some(stack_id_seq(2)));
+        assert_eq!(result[0].line_nums_added, Some(vec![4]));
+        assert_eq!(result[0].id, Some(id_seq(2)));
+
+        assert_eq!(
+            result[1].hunk_header,
+            Some(HunkHeader {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 5,
+                new_lines: 1
+            })
+        );
+        assert_eq!(result[1].stack_id, Some(stack_id_seq(1)));
+        assert_eq!(result[1].line_nums_added, Some(vec![5]));
+        assert_eq!(result[1].id, Some(id_seq(1)));
+    }
+
+    #[test]
     fn test_reconcile_exact_match_and_no_intersection() {
         let previous_assignments = vec![HunkAssignment::new("foo.rs", 10, 5, Some(1), Some(1))];
         let worktree_assignments = vec![
