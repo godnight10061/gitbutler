@@ -628,11 +628,11 @@ mod hunk {
                     let discard_new = sub_hunk_to_discard.new_range();
 
                     // Anchored sub-hunk discarding.
-                    if discard_old == hunk_to_split.old_range() {
+                    if discard_old == hunk_to_split.old_range() && !discard_new.is_null() {
                         subtractions.push(HunkSubstraction::New(discard_new));
                         return false;
                     }
-                    if discard_new == hunk_to_split.new_range() {
+                    if discard_new == hunk_to_split.new_range() && !discard_old.is_null() {
                         subtractions.push(HunkSubstraction::Old(discard_old));
                         return false;
                     }
