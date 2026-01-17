@@ -43,6 +43,26 @@ fn dropped_hunks() -> anyhow::Result<()> {
 }
 
 #[test]
+fn selector_hunks_can_be_discarded() -> anyhow::Result<()> {
+    let (repo, _tmp) = writable_scenario("selector-hunk-discard-insertion");
+
+    let discard_spec = DiffSpec {
+        previous_path: None,
+        path: "file".into(),
+        hunk_headers: vec![hunk_header("-0,0", "+5,1")],
+    };
+    let dropped = discard_workspace_changes(&repo, Some(discard_spec), CONTEXT_LINES)?;
+    assert!(
+        dropped.is_empty(),
+        "expected selector hunk to be associated and discarded, got {dropped:?}"
+    );
+
+    let file_content = std::fs::read(repo.workdir().unwrap().join("file"))?;
+    assert_eq!(file_content.as_bstr(), "base-1\nbase-2\nbase-3\nline-b\n");
+    Ok(())
+}
+
+#[test]
 fn non_modifications_trigger_error() -> anyhow::Result<()> {
     let repo = read_only_in_memory_scenario("deletion-addition-untracked")?;
     insta::assert_snapshot!(git_status(&repo)?, @r"

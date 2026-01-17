@@ -624,15 +624,32 @@ mod hunk {
             for hunk_to_split in hunks_to_keep {
                 let mut subtractions = Vec::new();
                 hunks_to_discard.retain(|sub_hunk_to_discard| {
-                    if sub_hunk_to_discard.old_range() == hunk_to_split.old_range() {
-                        subtractions.push(HunkSubstraction::New(sub_hunk_to_discard.new_range()));
-                        false
-                    } else if sub_hunk_to_discard.new_range() == hunk_to_split.new_range() {
-                        subtractions.push(HunkSubstraction::Old(sub_hunk_to_discard.old_range()));
-                        false
-                    } else {
-                        true
+                    let discard_old = sub_hunk_to_discard.old_range();
+                    let discard_new = sub_hunk_to_discard.new_range();
+
+                    // Anchored sub-hunk discarding.
+                    if discard_old == hunk_to_split.old_range() {
+                        subtractions.push(HunkSubstraction::New(discard_new));
+                        return false;
                     }
+                    if discard_new == hunk_to_split.new_range() {
+                        subtractions.push(HunkSubstraction::Old(discard_old));
+                        return false;
+                    }
+
+                    // Selector hunks like `-0,0 +N,M` or `-N,M +0,0` denote a slice of the new or old
+                    // image respectively. Match them by containment and implicitly anchor them to the
+                    // containing worktree hunk.
+                    if discard_old.is_null() && hunk_to_split.new_range().contains(discard_new) {
+                        subtractions.push(HunkSubstraction::New(discard_new));
+                        return false;
+                    }
+                    if discard_new.is_null() && hunk_to_split.old_range().contains(discard_old) {
+                        subtractions.push(HunkSubstraction::Old(discard_old));
+                        return false;
+                    }
+
+                    true
                 });
                 if subtractions.is_empty() {
                     hunks_to_keep_with_splits.push(hunk_to_split);
