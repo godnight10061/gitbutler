@@ -75,6 +75,7 @@ mod list_details;
 mod move_commit_to_vbranch;
 mod oplog;
 mod save_and_unapply_virtual_branch;
+mod sub_hunk_assignment;
 mod set_base_branch;
 mod unapply_without_saving_virtual_branch;
 mod undo_commit;

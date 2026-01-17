@@ -39,12 +39,14 @@ impl BranchManager<'_> {
         _ = self.ctx.snapshot_branch_deletion(stack.name(), perm);
 
         let repo = self.ctx.git2_repo.get()?;
+        let mut stack_head_for_unapply = stack.head_oid(self.ctx)?;
 
         // Commit any assigned diffspecs if such exist so that it will be part of the unapplied branch.
         if !assigned_diffspec.is_empty()
             && let Some(head) = stack.heads.last().map(|h| h.name.to_string())
         {
-            but_workspace::legacy::commit_engine::create_commit_simple(
+            let assigned_diffspec_to_discard = assigned_diffspec.clone();
+            let outcome = but_workspace::legacy::commit_engine::create_commit_simple(
                 self.ctx,
                 stack_id,
                 None,
@@ -53,6 +55,36 @@ impl BranchManager<'_> {
                 head.to_owned(),
                 perm,
             )?;
+            if let Some(new_commit) = outcome.new_commit {
+                stack_head_for_unapply = new_commit;
+            }
+
+            // The commit engine doesn't alter the worktree. Remove the successfully committed
+            // portions from the worktree so they won't be kept around when unapplying the stack.
+            if outcome.new_commit.is_some() && !assigned_diffspec_to_discard.is_empty() {
+                let rejected_specs: Vec<_> = outcome
+                    .rejected_specs
+                    .iter()
+                    .map(|(_reason, spec)| spec.clone())
+                    .collect();
+                let discard_specs = assigned_diffspec_to_discard
+                    .into_iter()
+                    .filter(|spec| !rejected_specs.contains(spec))
+                    .collect::<Vec<_>>();
+                if !discard_specs.is_empty() {
+                    let dropped = but_workspace::discard_workspace_changes(
+                        &*self.ctx.repo.get()?,
+                        discard_specs,
+                        self.ctx.settings().context_lines,
+                    )?;
+                    if !dropped.is_empty() {
+                        tracing::warn!(
+                            ?dropped,
+                            "Failed to discard some just-committed assigned changes"
+                        );
+                    }
+                }
+            }
         }
 
         // doing this earlier in the flow, in case any of the steps that follow fail
@@ -94,8 +126,7 @@ impl BranchManager<'_> {
             let workspace_base = gix_repo
                 .find_commit(workspace_base(self.ctx, perm.read_permission())?)?
                 .tree_id()?;
-            let stack_head =
-                gix_repo.find_real_tree(&stack.head_oid(self.ctx)?, Default::default())?;
+            let stack_head = gix_repo.find_real_tree(&stack_head_for_unapply, Default::default())?;
 
             let mut merge = gix_repo.merge_trees(
                 stack_head,

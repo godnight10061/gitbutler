@@ -1,7 +1,10 @@
 use std::cmp::Ordering;
 
+use bstr::ByteSlice;
 use but_core::ref_metadata::StackId;
+use but_core::HunkHeader;
 use itertools::Itertools;
+use uuid::Uuid;
 
 use crate::HunkAssignment;
 
@@ -50,6 +53,97 @@ impl HunkAssignment {
     }
 }
 
+fn is_selector_hunk(header: HunkHeader) -> bool {
+    header.old_range().is_null() || header.new_range().is_null()
+}
+
+fn specificity(header: HunkHeader) -> u32 {
+    if header.old_range().is_null() {
+        header.new_lines
+    } else if header.new_range().is_null() {
+        header.old_lines
+    } else {
+        header.old_lines.max(header.new_lines)
+    }
+}
+
+fn split_into_line_selections(base: &HunkAssignment) -> Vec<HunkAssignment> {
+    let (Some(hunk_header), Some(diff)) = (base.hunk_header, base.diff.as_ref()) else {
+        return vec![base.clone()];
+    };
+
+    let mut old_line_num = hunk_header.old_start as usize;
+    let mut new_line_num = hunk_header.new_start as usize;
+    let mut out = Vec::new();
+
+    let mut base_id = base.id;
+    for line in diff.lines() {
+        let Some(first_char) = line.first() else {
+            continue;
+        };
+        match *first_char {
+            b'+' => {
+                let id = base_id.take().or_else(|| Some(Uuid::new_v4()));
+                out.push(HunkAssignment {
+                    id,
+                    hunk_header: Some(HunkHeader {
+                        old_start: 0,
+                        old_lines: 0,
+                        new_start: new_line_num as u32,
+                        new_lines: 1,
+                    }),
+                    path: base.path.clone(),
+                    path_bytes: base.path_bytes.clone(),
+                    stack_id: base.stack_id,
+                    hunk_locks: base.hunk_locks.clone(),
+                    line_nums_added: Some(vec![new_line_num]),
+                    line_nums_removed: Some(Vec::new()),
+                    diff: None,
+                });
+                new_line_num += 1;
+            }
+            b'-' => {
+                let id = base_id.take().or_else(|| Some(Uuid::new_v4()));
+                out.push(HunkAssignment {
+                    id,
+                    hunk_header: Some(HunkHeader {
+                        old_start: old_line_num as u32,
+                        old_lines: 1,
+                        new_start: 0,
+                        new_lines: 0,
+                    }),
+                    path: base.path.clone(),
+                    path_bytes: base.path_bytes.clone(),
+                    stack_id: base.stack_id,
+                    hunk_locks: base.hunk_locks.clone(),
+                    line_nums_added: Some(Vec::new()),
+                    line_nums_removed: Some(vec![old_line_num]),
+                    diff: None,
+                });
+                old_line_num += 1;
+            }
+            b' ' => {
+                old_line_num += 1;
+                new_line_num += 1;
+            }
+            b'@' | b'\\' => {
+                // Header line or `\ No newline at end of file`.
+            }
+            _ => {
+                // Treat all other lines as context.
+                old_line_num += 1;
+                new_line_num += 1;
+            }
+        }
+    }
+
+    if out.is_empty() {
+        vec![base.clone()]
+    } else {
+        out
+    }
+}
+
 pub(crate) fn assignments(
     new: &[HunkAssignment],
     old: &[HunkAssignment],
@@ -64,6 +158,36 @@ pub(crate) fn assignments(
             .iter()
             .filter(|current_entry| current_entry.intersects(new_assignment.clone()))
             .collect::<Vec<_>>();
+
+        let has_selector_intersection = new_assignment.diff.is_some()
+            && intersecting.iter().any(|a| {
+                a.hunk_header
+                    .is_some_and(|header| is_selector_hunk(header))
+            });
+        if has_selector_intersection {
+            let mut pieces = split_into_line_selections(&new_assignment);
+            for piece in pieces.iter_mut() {
+                let mut old_for_piece = intersecting
+                    .iter()
+                    .copied()
+                    .filter(|a| a.intersects(piece.clone()))
+                    .collect::<Vec<_>>();
+                old_for_piece.sort_by_key(|a| {
+                    // Apply broad assignments first, then more specific ones.
+                    a.hunk_header.map(specificity).unwrap_or(u32::MAX)
+                });
+                for old in old_for_piece.into_iter().rev() {
+                    piece.set_from(old, applied_stack_ids, update_unassigned);
+                }
+                if let Some(stack_id) = piece.stack_id
+                    && !applied_stack_ids.contains(&stack_id)
+                {
+                    piece.stack_id = None;
+                }
+            }
+            reconciled.extend(pieces);
+            continue;
+        }
 
         match intersecting.len().cmp(&1) {
             Ordering::Less => {

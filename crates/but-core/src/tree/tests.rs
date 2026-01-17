@@ -253,6 +253,26 @@ mod to_additive_hunks {
     }
 
     #[test]
+    fn insertion_only_hunk_selections_shift_old_start() {
+        let wth = vec![hunk_header("-1,3", "+1,5")];
+        let wth0 = vec![hunk_header("-3,0", "+4,2")];
+
+        insta::assert_debug_snapshot!(to_additive_hunks(
+            [hunk_header("-0,0", "+4,1"), hunk_header("-0,0", "+5,1")],
+            &wth,
+            &wth0,
+        ).unwrap(), @r#"
+        (
+            [
+                HunkHeader("-4,0", "+4,1"),
+                HunkHeader("-4,0", "+5,1"),
+            ],
+            [],
+        )
+        "#);
+    }
+
+    #[test]
     fn real_world_issue() {
         let wth = vec![hunk_header("-1,214", "+1,55")];
         let wth0 = vec![

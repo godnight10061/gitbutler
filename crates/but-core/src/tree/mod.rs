@@ -403,7 +403,11 @@ fn to_additive_hunks(
             {
                 if last_wh != Some(*wh) {
                     last_wh = Some(*wh);
-                    previous.old_start = wh.old_start;
+                    previous.old_start = if wh.old_lines == 0 {
+                        wh.old_start + 1
+                    } else {
+                        wh.old_start
+                    };
                 }
                 hunks_to_commit.push(HunkHeader {
                     old_start: previous.old_start,
@@ -559,7 +563,11 @@ fn to_additive_hunks_fallback(
                                     })
                                     .then_some(wh.old_range().end())
                             })
-                            .unwrap_or(wh.old_start),
+                            .unwrap_or(if wh.old_lines == 0 {
+                                wh.old_start + 1
+                            } else {
+                                wh.old_start
+                            }),
                         old_lines: 0,
                         new_start: sh.new_start,
                         new_lines: sh.new_lines,

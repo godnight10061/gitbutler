@@ -302,10 +302,10 @@ impl PartialEq for HunkAssignment {
     }
 }
 
-impl HunkAssignment {
-    /// Whether there is overlap between the two hunks.
-    fn intersects(&self, other: HunkAssignment) -> bool {
-        if self == &other {
+    impl HunkAssignment {
+        /// Whether there is overlap between the two hunks.
+        fn intersects(&self, other: HunkAssignment) -> bool {
+            if self == &other {
             return true;
         }
         if self.path_bytes != other.path_bytes {
@@ -329,15 +329,31 @@ impl HunkAssignment {
             return true;
         }
 
-        // Both have hunk headers - check if the ranges overlap
-        if let (Some(header), Some(other_header)) = (self.hunk_header, other.hunk_header) {
-            return header.old_range().intersects(other_header.old_range())
-                && header.new_range().intersects(other_header.new_range());
-        }
+            // Both have hunk headers - check if the ranges overlap
+            if let (Some(header), Some(other_header)) = (self.hunk_header, other.hunk_header) {
+            let old = header.old_range();
+            let new = header.new_range();
+            let other_old = other_header.old_range();
+            let other_new = other_header.new_range();
 
-        false
+            // Selections ("-0,0" or "+0,0") represent old/new-only hunks and must not be matched
+            // against each other if they point to different sides.
+            let selects_new = old.is_null() && !new.is_null();
+            let selects_old = new.is_null() && !old.is_null();
+            let other_selects_new = other_old.is_null() && !other_new.is_null();
+            let other_selects_old = other_new.is_null() && !other_old.is_null();
+            if (selects_new && other_selects_old) || (selects_old && other_selects_new) {
+                return false;
+            }
+
+            let old_ok = old.is_null() || other_old.is_null() || old.intersects(other_old);
+            let new_ok = new.is_null() || other_new.is_null() || new.intersects(other_new);
+            return old_ok && new_ok;
+            }
+
+            false
+        }
     }
-}
 
 /// Sets the assignment for a hunk. It must be already present in the current assignments, errors out if it isn't.
 /// If the stack is not in the list of applied stacks, it errors out.
