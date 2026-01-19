@@ -2,7 +2,7 @@ import { getHunkLineSelector } from '../src/hunk.ts';
 import { getBaseURL, startGitButler, type GitButler } from '../src/setup.ts';
 import { clickByTestId, fillByTestId, getByTestId, waitForTestId } from '../src/util.ts';
 import { expect, Locator, test } from '@playwright/test';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 
 let gitbutler: GitButler;
@@ -152,6 +152,58 @@ test('should discard an untracked added file via context menu', async ({
 	await clickByTestId(page, 'hunk-context-menu-discard-change');
 
 	await expect.poll(() => existsSync(filePath)).toBe(false);
+	await expect(fileItem).toHaveCount(0);
+	await expect(getByTestId(page, 'workspace-view')).toBeVisible();
+});
+
+test('should discard a deleted tracked file via context menu', async ({
+	page,
+	context
+}, testInfo) => {
+	const workdir = testInfo.outputPath('workdir');
+	const configdir = testInfo.outputPath('config');
+	gitbutler = await startGitButler(workdir, configdir, context);
+
+	const fileName = 'a_file';
+	const projectPath = gitbutler.pathInWorkdir('local-clone/');
+	const filePath = join(projectPath, fileName);
+
+	await gitbutler.runScript('project-with-remote-branches.sh');
+
+	await page.goto('/');
+
+	// Should load the workspace
+	await waitForTestId(page, 'workspace-view');
+
+	const originalContent = readFileSync(filePath, 'utf-8');
+	expect(existsSync(filePath)).toBe(true);
+
+	// Delete a tracked file so it shows up as a whole-file deletion.
+	rmSync(filePath);
+	await expect.poll(() => existsSync(filePath)).toBe(false);
+
+	// The file should appear on the uncommitted changes area
+	const uncommittedChangesList = getByTestId(page, 'uncommitted-changes-file-list');
+	const fileItem = uncommittedChangesList
+		.getByTestId('file-list-item')
+		.filter({ hasText: fileName });
+	await expect(fileItem).toBeVisible();
+	await fileItem.click();
+
+	// The unified diff view should be visible
+	const unifiedDiffView = getByTestId(page, 'unified-diff-view');
+	await expect(unifiedDiffView).toBeVisible();
+
+	// Open the hunk context menu for the deleted file and discard it.
+	await unifiedDiffView
+		.locator('[data-testid="hunk-count-column"]')
+		.first()
+		.click({ button: 'right' });
+	await waitForTestId(page, 'hunk-context-menu');
+	await clickByTestId(page, 'hunk-context-menu-discard-change');
+
+	await expect.poll(() => existsSync(filePath)).toBe(true);
+	await expect.poll(() => readFileSync(filePath, 'utf-8')).toBe(originalContent);
 	await expect(fileItem).toHaveCount(0);
 	await expect(getByTestId(page, 'workspace-view')).toBeVisible();
 });

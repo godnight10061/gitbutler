@@ -58,7 +58,9 @@
 	const ircChannels = $derived(Object.keys(ircService.getChannels()));
 
 	const filePath = $derived(change.path);
-	const isWholeFileChange = $derived(['Addition', 'Deletion'].includes(change.status.type));
+	const isWholeFileChange = $derived(
+		change.status.type === 'Addition' || change.status.type === 'Deletion'
+	);
 	let contextMenu: ReturnType<typeof ContextMenu> | undefined;
 
 	function getDiscardLineLabel(item: HunkContextItem) {
