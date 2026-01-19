@@ -58,6 +58,7 @@
 	const ircChannels = $derived(Object.keys(ircService.getChannels()));
 
 	const filePath = $derived(change.path);
+	const isWholeFileChange = $derived(['Addition', 'Deletion'].includes(change.status.type));
 	let contextMenu: ReturnType<typeof ContextMenu> | undefined;
 
 	function getDiscardLineLabel(item: HunkContextItem) {
@@ -74,9 +75,6 @@
 			change.status.type === 'Rename' ? change.status.subject.previousPathBytes : null;
 
 		unselectAllHunkLines(item.hunk);
-
-		const isWholeFileChange =
-			change.status.type === 'Addition' || change.status.type === 'Deletion';
 
 		await stackService.discardChanges({
 			projectId,
@@ -138,7 +136,7 @@
 							contextMenu?.close();
 						}}
 					/>
-					{#if item.selectedLines !== undefined && item.selectedLines.length > 0 && change.status.type !== 'Addition' && change.status.type !== 'Deletion'}
+					{#if item.selectedLines !== undefined && item.selectedLines.length > 0 && !isWholeFileChange}
 						<ContextMenuItem
 							testId={TestId.HunkContextMenu_DiscardLines}
 							label={getDiscardLineLabel(item)}
