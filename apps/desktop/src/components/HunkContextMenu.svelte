@@ -58,6 +58,9 @@
 	const ircChannels = $derived(Object.keys(ircService.getChannels()));
 
 	const filePath = $derived(change.path);
+	const isWholeFileChange = $derived(
+		change.status.type === 'Addition' || change.status.type === 'Deletion'
+	);
 	let contextMenu: ReturnType<typeof ContextMenu> | undefined;
 
 	function getDiscardLineLabel(item: HunkContextItem) {
@@ -81,7 +84,7 @@
 				{
 					previousPathBytes,
 					pathBytes: change.pathBytes,
-					hunkHeaders: [item.hunk]
+					hunkHeaders: isWholeFileChange ? [] : [item.hunk]
 				}
 			]
 		});
@@ -135,7 +138,7 @@
 							contextMenu?.close();
 						}}
 					/>
-					{#if item.selectedLines !== undefined && item.selectedLines.length > 0}
+					{#if item.selectedLines !== undefined && item.selectedLines.length > 0 && !isWholeFileChange}
 						<ContextMenuItem
 							testId={TestId.HunkContextMenu_DiscardLines}
 							label={getDiscardLineLabel(item)}
