@@ -21,9 +21,10 @@
 		draggableFiles?: boolean;
 		autoselect?: boolean;
 		ancestorMostConflictedCommitId?: string;
-		onselect?: (change: TreeChange, index: number) => void;
+		onFileClick?: (index: number) => void;
 		allowUnselect?: boolean;
 		persistId?: string;
+		foldedByDefault?: boolean;
 	};
 
 	const {
@@ -37,9 +38,10 @@
 		draggableFiles,
 		autoselect,
 		ancestorMostConflictedCommitId,
-		onselect,
+		onFileClick,
 		allowUnselect = true,
-		persistId = 'default'
+		persistId = 'default',
+		foldedByDefault = false
 	}: Props = $props();
 
 	const idSelection = inject(FILE_SELECTION_MANAGER);
@@ -49,9 +51,14 @@
 	const firstChangePath = $derived(changes.at(0)?.path);
 
 	let listMode: 'list' | 'tree' = $state('tree');
-	let folded = $state(false);
-
 	const hasConflicts = $derived(conflictEntries && Object.keys(conflictEntries).length > 0);
+	let folded = $state(foldedByDefault);
+
+	$effect(() => {
+		if (changes.length === 0 && !hasConflicts) {
+			folded = true;
+		}
+	});
 
 	$effect(() => {
 		const id = readStableSelectionKey(stringSelectionKey);
@@ -103,8 +110,8 @@
 				<EmptyStatePlaceholder
 					image={emptyFolderSvg}
 					gap={0}
-					topBottomPadding={4}
-					bottomMargin={24}
+					topBottomPadding={14}
+					bottomMargin={20}
 				>
 					{#snippet caption()}
 						No files changed
@@ -121,7 +128,7 @@
 					{draggableFiles}
 					{ancestorMostConflictedCommitId}
 					{allowUnselect}
-					{onselect}
+					{onFileClick}
 				/>
 			{/if}
 		{/if}

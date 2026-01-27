@@ -10,11 +10,23 @@
 		projectId: string;
 		stackId: string;
 		inWorkspace: boolean;
-		hasLocal: boolean;
+		isTarget?: boolean;
+		selectedCommitId?: string;
+		onCommitClick: (commitId: string) => void;
+		onFileClick: (index: number) => void;
 		onerror: (err: unknown) => void;
 	};
 
-	const { projectId, stackId, inWorkspace, hasLocal, onerror }: Props = $props();
+	const {
+		projectId,
+		stackId,
+		inWorkspace,
+		isTarget,
+		selectedCommitId,
+		onCommitClick,
+		onFileClick,
+		onerror
+	}: Props = $props();
 
 	const stackService = inject(STACK_SERVICE);
 
@@ -43,7 +55,10 @@
 					{branchName}
 					isTopBranch={idx === 0}
 					{inWorkspace}
-					{hasLocal}
+					{isTarget}
+					{selectedCommitId}
+					{onCommitClick}
+					{onFileClick}
 					{onerror}
 				/>
 			{/each}

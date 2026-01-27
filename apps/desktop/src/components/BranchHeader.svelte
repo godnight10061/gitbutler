@@ -39,6 +39,7 @@
 		iconName: keyof typeof iconsJson;
 		roundedBottom?: boolean;
 		onclick?: () => void;
+		disableClick?: boolean;
 		updateBranchName: (name: string) => void;
 		isUpdatingName: boolean;
 		failedMisserablyToUpdateBranchName: boolean;
@@ -70,6 +71,7 @@
 		iconName,
 		roundedBottom,
 		onclick,
+		disableClick,
 		updateBranchName,
 		emptyState,
 		content,
@@ -130,6 +132,7 @@
 		class:selected
 		class:active
 		class:committing={isCommitting}
+		class:disable-hover={disableClick}
 		{onclick}
 		onkeypress={onclick}
 		tabindex="0"
@@ -223,6 +226,7 @@
 <style lang="postcss">
 	.header-wrapper {
 		display: flex;
+		flex-shrink: 0;
 		flex-direction: column;
 		width: 100%;
 		overflow: hidden;
@@ -250,9 +254,14 @@
 		overflow: hidden;
 		border-bottom: none;
 		background-color: var(--branch-selected-bg);
+		cursor: pointer;
+
+		&.disable-hover {
+			cursor: default;
+		}
 
 		/* Selected but NOT in focus */
-		&:hover {
+		&:not(.disable-hover):hover {
 			--branch-selected-bg: var(--hover-bg-1);
 
 			& .branch-header__drag-handle {
@@ -316,9 +325,7 @@
 		flex-direction: column;
 		width: 100%;
 		padding: 14px 0;
-		/* overflow: hidden; */
 		gap: 8px;
-		/* text-overflow: ellipsis; */
 	}
 
 	.branch-header__select-indicator {

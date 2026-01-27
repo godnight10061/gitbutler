@@ -30,6 +30,7 @@
 		lineColor: string;
 		readonly: boolean;
 		first?: boolean;
+		overflowHidden?: boolean;
 	}
 
 	interface NormalBranchProps extends BranchCardProps {
@@ -40,7 +41,8 @@
 		isTopBranch?: boolean;
 		isNewBranch?: boolean;
 		roundedBottom?: boolean;
-		onclick: () => void;
+		onclick?: () => void;
+		disableClick?: boolean;
 		branchContent: Snippet;
 		codegenRow?: Snippet;
 	}
@@ -67,6 +69,7 @@
 		hasCodegenRow?: boolean;
 		baseCommit?: string;
 		onclick: () => void;
+		disableClick?: boolean;
 		menu?: Snippet<[{ rightClickTrigger: HTMLElement }]>;
 		buttons?: Snippet;
 		branchContent: Snippet;
@@ -82,7 +85,7 @@
 
 	type Props = NormalBranchProps | StackBranchProps | PrBranchProps;
 
-	let { projectId, branchName, lineColor, readonly, ...args }: Props = $props();
+	let { projectId, branchName, lineColor, readonly, overflowHidden, ...args }: Props = $props();
 
 	const uiState = inject(UI_STATE);
 	const stackService = inject(STACK_SERVICE);
@@ -154,6 +157,7 @@
 	class:selected
 	data-series-name={branchName}
 	data-testid={TestId.BranchCard}
+	style:overflow={overflowHidden ? 'hidden' : undefined}
 >
 	{#if args.type === 'stack-branch'}
 		{@const moveHandler = args.stackId
@@ -201,7 +205,8 @@
 				roundedBottom={isRoundedBottom}
 				{readonly}
 				{isPushed}
-				onclick={args.onclick}
+				onclick={args.disableClick ? undefined : args.onclick}
+				disableClick={args.disableClick}
 				menu={args.menu}
 				conflicts={args.isConflicted}
 				{showPrCreation}
@@ -287,7 +292,8 @@
 			failedMisserablyToUpdateBranchName={nameUpdate.current.isError}
 			readonly
 			{isPushed}
-			onclick={args.onclick}
+			onclick={args.disableClick ? undefined : args.onclick}
+			disableClick={args.disableClick}
 			roundedBottom={args.roundedBottom}
 		>
 			{#snippet emptyState()}
