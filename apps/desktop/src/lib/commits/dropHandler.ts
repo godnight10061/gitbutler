@@ -7,6 +7,7 @@ import {
 	FileChangeDropData,
 	FolderChangeDropData,
 	HunkDropDataV3,
+	effectiveHunkHeaders,
 	type ChangeDropData
 } from '$lib/dragging/draggables';
 import { type HooksService } from '$lib/hooks/hooksService';
@@ -215,6 +216,10 @@ export class UncommitDzHandler implements DropzoneHandler {
 			}
 			const previousPathBytes =
 				data.change.status.type === 'Rename' ? data.change.status.subject.previousPathBytes : null;
+			const hunkHeaders =
+				data.change.status.type === 'Addition' || data.change.status.type === 'Deletion'
+					? []
+					: effectiveHunkHeaders(data);
 
 			const { replacedCommits } = await this.stackService.uncommitChanges({
 				projectId: this.projectId,
@@ -224,14 +229,7 @@ export class UncommitDzHandler implements DropzoneHandler {
 					{
 						previousPathBytes,
 						pathBytes: data.change.pathBytes,
-						hunkHeaders: [
-							{
-								oldStart: data.hunk.oldStart,
-								oldLines: data.hunk.oldLines,
-								newStart: data.hunk.newStart,
-								newLines: data.hunk.newLines
-							}
-						]
+						hunkHeaders
 					}
 				],
 				assignTo: this.assignTo
@@ -297,14 +295,7 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 						{
 							previousPathBytes,
 							pathBytes: data.change.pathBytes,
-							hunkHeaders: [
-								{
-									oldStart: data.hunk.oldStart,
-									oldLines: data.hunk.oldLines,
-									newStart: data.hunk.newStart,
-									newLines: data.hunk.newLines
-								}
-							]
+							hunkHeaders: effectiveHunkHeaders(data)
 						}
 					]
 				});
@@ -320,14 +311,7 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				{
 					previousPathBytes,
 					pathBytes: data.change.pathBytes,
-					hunkHeaders: [
-						{
-							oldStart: data.hunk.oldStart,
-							oldLines: data.hunk.oldLines,
-							newStart: data.hunk.newStart,
-							newLines: data.hunk.newLines
-						}
-					]
+					hunkHeaders: effectiveHunkHeaders(data)
 				}
 			];
 

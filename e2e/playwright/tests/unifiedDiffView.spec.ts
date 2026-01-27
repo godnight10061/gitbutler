@@ -2,7 +2,8 @@ import { getHunkLineSelector } from '../src/hunk.ts';
 import { getBaseURL, startGitButler, type GitButler } from '../src/setup.ts';
 import { clickByTestId, fillByTestId, getByTestId, waitForTestId } from '../src/util.ts';
 import { expect, Locator, test } from '@playwright/test';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 
 let gitbutler: GitButler;
@@ -154,6 +155,237 @@ test('should discard an untracked added file via context menu', async ({
 	await expect.poll(() => existsSync(filePath)).toBe(false);
 	await expect(fileItem).toHaveCount(0);
 	await expect(getByTestId(page, 'workspace-view')).toBeVisible();
+});
+
+test('should uncommit an added file when dragging a committed hunk', async ({
+	page,
+	context
+}, testInfo) => {
+	testInfo.setTimeout(120_000);
+
+	const workdir = testInfo.outputPath('workdir');
+	const configdir = testInfo.outputPath('config');
+	gitbutler = await startGitButler(workdir, configdir, context);
+
+	const fileName = 'dummy.txt';
+	const keepFileName = 'a_file';
+	const projectPath = gitbutler.pathInWorkdir('local-clone/');
+	const filePath = join(projectPath, fileName);
+	const keepFilePath = join(projectPath, keepFileName);
+
+	await gitbutler.runScript('project-with-remote-branches.sh');
+	await gitbutler.runScript('apply-upstream-branch.sh', ['branch1', 'local-clone']);
+
+	await page.goto('/');
+
+	// Should load the workspace.
+	await waitForTestId(page, 'workspace-view');
+
+	// Create a new file and a small modification so the commit stays non-empty after uncommitting the file.
+	writeFileSync(filePath, 'dummy line 1\ndummy line 2\n', 'utf-8');
+	appendFileSync(keepFilePath, 'keep-in-commit\n', 'utf-8');
+
+	// Ensure the UI picks up the new untracked file on Windows.
+	await page.reload();
+	await waitForTestId(page, 'workspace-view');
+
+	const uncommittedChangesList = getByTestId(page, 'uncommitted-changes-file-list');
+	const uncommittedFileItem = uncommittedChangesList
+		.getByTestId('file-list-item')
+		.filter({ hasText: fileName })
+		.first();
+	await expect(uncommittedFileItem).toBeVisible({ timeout: 15_000 });
+
+	// Commit the changes so we can uncommit them via the committed diff view.
+	const commitTitle = 'Uncommit added file: source';
+	await clickByTestId(page, 'start-commit-button');
+	await fillByTestId(page, 'commit-drawer-title-input', commitTitle);
+	await clickByTestId(page, 'commit-drawer-action-button');
+
+	const commitRow = getByTestId(page, 'commit-row').filter({ hasText: commitTitle });
+	await expect(commitRow).toBeVisible();
+
+	// Open the commit details panel and select the newly added file.
+	await commitRow.click();
+	const stack = getByTestId(page, 'stack');
+	const committedFileItem = stack
+		.getByTestId('file-list-item')
+		.filter({ hasText: fileName })
+		.first();
+	await expect(committedFileItem).toBeVisible({ timeout: 30_000 });
+	await committedFileItem.click();
+
+	const stackPreview = getByTestId(page, 'stack-preview');
+	await expect(stackPreview).toBeVisible({ timeout: 15_000 });
+	const unifiedDiffView = stackPreview.getByTestId('unified-diff-view').first();
+	await expect(unifiedDiffView).toBeVisible();
+
+	// Select a delta line to ensure we attempt a hunk-based uncommit.
+	const lineSelector = getHunkLineSelector(fileName, 1, 'right');
+	const line = stackPreview.locator(lineSelector).first();
+	await expect(line).toBeVisible({ timeout: 15_000 });
+	await line.click();
+
+	const originalCommitId = await commitRow.getAttribute('data-commit-id');
+	expect(originalCommitId).toBeTruthy();
+
+	// Drag the committed hunk onto the Unassigned worktree lane to uncommit it.
+	const hunkTitle = line
+		.locator('xpath=ancestor::table[1]')
+		.locator('.table__title-content')
+		.first();
+	const unassignedLaneHeader = getByTestId(page, 'uncommitted-changes-header')
+		.filter({ hasText: /Unstaged|Unassigned/i })
+		.first();
+
+	await hunkTitle.hover();
+	await page.mouse.down();
+	await unassignedLaneHeader.hover({ force: true });
+	await page.mouse.up();
+
+	// Wait for the commit to be rewritten and verify the added file was uncommitted.
+	await expect
+		.poll(async () => (await commitRow.getAttribute('data-commit-id')) ?? '', {
+			timeout: 15_000
+		})
+		.not.toBe(originalCommitId);
+
+	const finalCommitId = (await commitRow.getAttribute('data-commit-id'))!;
+
+	function gitShowNames(commitId: string) {
+		return execFileSync('git', ['show', '--name-only', '--pretty=format:', commitId], {
+			cwd: projectPath,
+			encoding: 'utf-8'
+		});
+	}
+
+	function gitStatusPorcelain() {
+		return execFileSync('git', ['status', '--porcelain'], { cwd: projectPath, encoding: 'utf-8' });
+	}
+
+	await expect.poll(() => gitShowNames(finalCommitId)).toContain(keepFileName);
+	await expect.poll(() => gitShowNames(finalCommitId)).not.toContain(fileName);
+	await expect.poll(gitStatusPorcelain).toContain(`?? ${fileName}`);
+
+	await expect(uncommittedFileItem).toBeVisible({ timeout: 15_000 });
+});
+
+test('should uncommit only the selected lines when dragging a committed hunk', async ({
+	page,
+	context
+}, testInfo) => {
+	testInfo.setTimeout(120_000);
+
+	const workdir = testInfo.outputPath('workdir');
+	const configdir = testInfo.outputPath('config');
+	gitbutler = await startGitButler(workdir, configdir, context);
+
+	const fileName = 'a_file';
+	const projectPath = gitbutler.pathInWorkdir('local-clone/');
+	const filePath = join(projectPath, fileName);
+
+	await gitbutler.runScript('project-with-remote-branches.sh');
+	await gitbutler.runScript('apply-upstream-branch.sh', ['branch1', 'local-clone']);
+
+	await page.goto('/');
+
+	// Should load the workspace.
+	await waitForTestId(page, 'workspace-view');
+
+	// Create a new commit containing a multi-line hunk at the end of the file.
+	const addedLines = [
+		'partial-uncommit-line-1',
+		'partial-uncommit-line-2',
+		'partial-uncommit-line-3'
+	];
+	appendFileSync(filePath, `${addedLines.join('\n')}\n`, 'utf-8');
+
+	const fullFileLines = readFileSync(filePath, 'utf-8').split('\n');
+	if (fullFileLines.at(-1) === '') fullFileLines.pop();
+	const totalLineCount = fullFileLines.length;
+	const selectedLineNumbers = [totalLineCount - 2, totalLineCount - 1];
+
+	const uncommittedChangesList = getByTestId(page, 'uncommitted-changes-file-list');
+	await expect(
+		uncommittedChangesList.getByTestId('file-list-item').filter({ hasText: fileName }).first()
+	).toBeVisible({ timeout: 15_000 });
+
+	// Commit all changes so the hunk becomes committed.
+	const sourceCommitTitle = 'Partial uncommit: source';
+	await clickByTestId(page, 'start-commit-button');
+	await fillByTestId(page, 'commit-drawer-title-input', sourceCommitTitle);
+	await clickByTestId(page, 'commit-drawer-action-button');
+
+	const sourceCommitRow = getByTestId(page, 'commit-row').filter({ hasText: sourceCommitTitle });
+	await expect(sourceCommitRow).toBeVisible();
+
+	// Open the commit details panel and select the file to see the committed diff.
+	await sourceCommitRow.click();
+	const stack = getByTestId(page, 'stack');
+	const committedFileItem = stack
+		.getByTestId('file-list-item')
+		.filter({ hasText: fileName })
+		.first();
+	await expect(committedFileItem).toBeVisible({ timeout: 30_000 });
+	await committedFileItem.click();
+
+	const stackPreview = getByTestId(page, 'stack-preview');
+	await expect(stackPreview).toBeVisible({ timeout: 15_000 });
+	const unifiedDiffView = stackPreview.getByTestId('unified-diff-view').first();
+	await expect(unifiedDiffView).toBeVisible();
+
+	// Select only two delta lines in the committed hunk.
+	let lineForDrag: Locator | undefined;
+	for (const lineNumber of selectedLineNumbers) {
+		const selector = getHunkLineSelector(fileName, lineNumber, 'right');
+		const line = unifiedDiffView.locator(selector).first();
+		await expect(line).toBeVisible();
+		await line.click();
+		lineForDrag ??= line;
+	}
+
+	const originalSourceCommitId = await sourceCommitRow.getAttribute('data-commit-id');
+	expect(originalSourceCommitId).toBeTruthy();
+
+	// Drag the committed hunk back to the Unassigned worktree lane.
+	if (!lineForDrag) throw new Error('No selectable line found');
+
+	const hunkTitle = lineForDrag
+		.locator('xpath=ancestor::table[1]')
+		.locator('.table__title-content')
+		.first();
+	const unassignedLaneHeader = getByTestId(page, 'uncommitted-changes-header')
+		.filter({ hasText: /Unstaged|Unassigned/i })
+		.first();
+
+	await hunkTitle.hover();
+	await page.mouse.down();
+	await unassignedLaneHeader.hover({ force: true });
+	await page.mouse.up();
+
+	// Wait for the commit to be rewritten.
+	await expect
+		.poll(async () => (await sourceCommitRow.getAttribute('data-commit-id')) ?? '', {
+			timeout: 15_000
+		})
+		.not.toBe(originalSourceCommitId);
+
+	const finalSourceCommitId = (await sourceCommitRow.getAttribute('data-commit-id'))!;
+
+	function gitShow(commitId: string) {
+		return execFileSync('git', ['show', '--pretty=format:', commitId], {
+			cwd: projectPath,
+			encoding: 'utf-8'
+		});
+	}
+
+	// Only the selected lines should be uncommitted, leaving the last line behind in the commit.
+	const remainingLine = addedLines[2]!;
+	await expect.poll(() => gitShow(finalSourceCommitId)).toContain(remainingLine);
+
+	for (const selectedLine of addedLines.slice(0, 2)) {
+		await expect.poll(() => gitShow(finalSourceCommitId)).not.toContain(selectedLine);
+	}
 });
 
 async function unselectHunkLines(

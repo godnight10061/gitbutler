@@ -13,8 +13,14 @@ export class HunkDropDataV3 {
 		readonly uncommitted: boolean,
 		readonly stackId: string | null,
 		readonly commitId: string | undefined,
-		readonly selectionId: SelectionId
+		readonly selectionId: SelectionId,
+		/** Optional: when set, only these headers should be moved/amended (line selection). */
+		readonly selectedHunkHeaders?: HunkHeader[]
 	) {}
+}
+
+export function effectiveHunkHeaders(data: HunkDropDataV3): HunkHeader[] {
+	return data.selectedHunkHeaders?.length ? data.selectedHunkHeaders : [data.hunk];
 }
 
 export class FileChangeDropData {

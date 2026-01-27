@@ -4,6 +4,7 @@ import {
 	FileChangeDropData,
 	FolderChangeDropData,
 	HunkDropDataV3,
+	effectiveHunkHeaders,
 	type ChangeDropData
 } from '$lib/dragging/draggables';
 import { unstackPRs, updateStackPrs } from '$lib/forge/shared/prFooter';
@@ -175,14 +176,7 @@ export class OutsideLaneDzHandler implements DropzoneHandler {
 						{
 							previousPathBytes,
 							pathBytes: data.change.pathBytes,
-							hunkHeaders: [
-								{
-									oldStart: data.hunk.oldStart,
-									oldLines: data.hunk.oldLines,
-									newStart: data.hunk.newStart,
-									newLines: data.hunk.newLines
-								}
-							]
+							hunkHeaders: effectiveHunkHeaders(data)
 						}
 					]
 				);
