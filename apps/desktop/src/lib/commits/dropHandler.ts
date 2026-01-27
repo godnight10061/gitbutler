@@ -216,6 +216,10 @@ export class UncommitDzHandler implements DropzoneHandler {
 			}
 			const previousPathBytes =
 				data.change.status.type === 'Rename' ? data.change.status.subject.previousPathBytes : null;
+			const hunkHeaders =
+				data.change.status.type === 'Addition' || data.change.status.type === 'Deletion'
+					? []
+					: effectiveHunkHeaders(data);
 
 			const { replacedCommits } = await this.stackService.uncommitChanges({
 				projectId: this.projectId,
@@ -225,7 +229,7 @@ export class UncommitDzHandler implements DropzoneHandler {
 					{
 						previousPathBytes,
 						pathBytes: data.change.pathBytes,
-						hunkHeaders: effectiveHunkHeaders(data)
+						hunkHeaders
 					}
 				],
 				assignTo: this.assignTo
