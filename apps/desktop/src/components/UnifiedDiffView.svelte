@@ -199,7 +199,7 @@
 						class="hunk-content"
 						use:draggableChips={{
 							label:
-								selection.current.lines.length > 0
+								selection.current.selected && selection.current.lines.length > 0
 									? `${hunk.diff.split('\n')[0]} (${selection.current.lines.length} selected lines)`
 									: hunk.diff.split('\n')[0],
 							data: new HunkDropDataV3(
